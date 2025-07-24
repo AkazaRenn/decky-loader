@@ -2,21 +2,22 @@
 import sys
 from typing import Any, Dict
 from .localplatform.localplatform import (chmod, chown, service_stop, service_start,
-                            ON_WINDOWS, ON_LINUX, get_log_level, get_live_reload, 
+                            ON_WINDOWS, ON_LINUX, get_log_level, get_live_reload,
                             get_server_port, get_server_host, get_chown_plugin_path,
                             get_privileged_path, restart_webhelper)
 if hasattr(sys, '_MEIPASS'):
     chmod(sys._MEIPASS, 755) # type: ignore
-    
+
 # Full imports
 import multiprocessing
 multiprocessing.freeze_support()
-from asyncio import AbstractEventLoop, CancelledError, Task, all_tasks, current_task, gather, new_event_loop, set_event_loop, sleep
+from asyncio import AbstractEventLoop, CancelledError, Task, all_tasks, current_task, gather, new_event_loop, set_event_loop, sleep, run
 from logging import basicConfig, getLogger
 from os import path
 from traceback import format_exc
 from time import time
 import aiohttp_cors # pyright: ignore [reportMissingTypeStubs]
+import argparse
 
 # Partial imports
 from aiohttp import client_exceptions
@@ -28,7 +29,7 @@ from setproctitle import getproctitle, setproctitle, setthreadtitle
 from .browser import PluginBrowser
 from .helpers import (REMOTE_DEBUGGER_UNIT, create_inject_script, csrf_middleware, get_csrf_token, get_loader_version,
                      mkdir_as_user, get_system_pythonpaths, get_effective_user_id)
-                     
+
 from .injector import get_gamepadui_tab, Tab
 from .loader import Loader
 from .settings import SettingsManager
@@ -73,7 +74,7 @@ class PluginManager:
         self.ws = WSRouter(self.loop, self.web_app)
         self.plugin_loader = Loader(self, self.ws, plugin_path, self.loop, get_live_reload())
         self.settings = SettingsManager("loader", path.join(get_privileged_path(), "settings"))
-        self.plugin_browser = PluginBrowser(plugin_path, self.plugin_loader.plugins, self.plugin_loader, self.settings) 
+        self.plugin_browser = PluginBrowser(plugin_path, self.plugin_loader.plugins, self.plugin_loader, self.settings)
         self.utilities = Utilities(self)
         self.updater = Updater(self)
         self.last_webhelper_exit: float = 0
@@ -251,6 +252,11 @@ class PluginManager:
     def run(self):
         run_app(self.web_app, host=get_server_host(), port=get_server_port(), loop=self.loop, access_log=None, handle_signals=True, shutdown_timeout=40)
 
+def parse_args():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--update", action="store_true", help="update Decky Loader and exit")
+    return arg_parser.parse_args()
+
 def main():
     setproctitle(f"Decky Loader {get_loader_version()} ({getproctitle()})")
     setthreadtitle("Decky Loader")
@@ -269,4 +275,10 @@ def main():
 
     loop = new_event_loop()
     set_event_loop(loop)
-    PluginManager(loop).run()
+    plugin_manager = PluginManager(loop)
+
+    args = parse_args()
+    if args.update:
+        run(plugin_manager.updater.do_update())
+    else:
+        plugin_manager.run()
